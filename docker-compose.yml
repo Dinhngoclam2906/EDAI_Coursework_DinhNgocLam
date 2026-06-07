@@ -1,0 +1,282 @@
+version: '3.8'
+
+# FinGuard — core data infrastructure
+#
+# Start:  docker compose up -d
+# Stop:   docker compose down
+#
+# Service map (host ports):
+#   Kafka            → localhost:9095  (9092 taken by capstone project)
+#   Postgres (CDC)   → localhost:5432
+#   Debezium         → localhost:8083  (REST API)
+#   Schema Registry  → localhost:8081
+#   Redpanda Console → http://localhost:8085  (Kafka UI)
+#   MinIO S3 API     → localhost:9000
+#   MinIO Console    → http://localhost:9001  (minioadmin / minioadmin)
+#   Hive Metastore   → localhost:9083  (Thrift)
+#   Trino            → http://localhost:8082  (SQL UI + JDBC)
+#   Flink UI         → http://localhost:8881
+
+services:
+
+  # ── Kafka (KRaft — no ZooKeeper) ────────────────────────────────────────────
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    hostname: kafka
+    container_name: kafka
+    ports:
+      - "9095:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_NODE_ID: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092,PLAINTEXT_HOST://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      CLUSTER_ID: "FinGuardKafkaCluster001xYZ"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - finguard-net
+
+  # ── PostgreSQL (banking source DB — CDC / Debezium enabled) ─────────────────
+  postgres:
+    image: postgres:15-alpine
+    hostname: postgres
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: finguard
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - finguard-net
+
+  # ── Debezium (CDC connector / Kafka Connect) ─────────────────────────────────
+  debezium:
+    image: debezium/connect:2.5
+    hostname: debezium
+    container_name: debezium
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:19092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: debezium_connect_configs
+      OFFSET_STORAGE_TOPIC: debezium_connect_offsets
+      STATUS_STORAGE_TOPIC: debezium_connect_statuses
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8083/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - finguard-net
+
+  # ── Schema Registry ──────────────────────────────────────────────────────────
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest
+    hostname: schema-registry
+    container_name: schema-registry
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:19092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - finguard-net
+
+  # ── Redpanda Console (Kafka UI) ──────────────────────────────────────────────
+  redpanda-console:
+    image: redpandadata/console:latest
+    hostname: redpanda-console
+    container_name: redpanda-console
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_BROKERS: kafka:19092
+      SCHEMAREGISTRY_ENABLED: "true"
+      SCHEMAREGISTRY_URLS: http://schema-registry:8081
+      CONNECT_ENABLED: "true"
+      CONNECT_CLUSTERS_NAME: debezium
+      CONNECT_CLUSTERS_URL: http://debezium:8083
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    networks:
+      - finguard-net
+
+  # ── MinIO (S3-compatible object storage) ─────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9002:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - finguard-net
+
+  # ── Hive Metastore backend DB ────────────────────────────────────────────────
+  metastore-db:
+    image: postgres:15
+    container_name: metastore-db
+    ports:
+      - "5435:5432"
+    environment:
+      POSTGRES_DB: metastore
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive
+    volumes:
+      - metastore_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - finguard-net
+
+  # ── Hive Metastore (table catalog for Trino / Spark) ─────────────────────────
+  hive-metastore:
+    image: starburstdata/hive:3.1.2-e.18
+    container_name: hive-metastore
+    ports:
+      - "9083:9083"
+    environment:
+      HIVE_METASTORE_DRIVER: org.postgresql.Driver
+      HIVE_METASTORE_JDBC_URL: jdbc:postgresql://metastore-db:5432/metastore
+      HIVE_METASTORE_USER: hive
+      HIVE_METASTORE_PASSWORD: hive
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_PATH_STYLE_ACCESS: "true"
+      REGION: ""
+      GOOGLE_CLOUD_KEY_FILE_PATH: ""
+      AZURE_ADL_CLIENT_ID: ""
+      AZURE_ADL_CREDENTIAL: ""
+      AZURE_ADL_REFRESH_URL: ""
+      AZURE_ABFS_STORAGE_ACCOUNT: ""
+      AZURE_ABFS_ACCESS_KEY: ""
+      AZURE_WASB_STORAGE_ACCOUNT: ""
+      AZURE_ABFS_OAUTH: ""
+      AZURE_ABFS_OAUTH_TOKEN_PROVIDER: ""
+      AZURE_ABFS_OAUTH_CLIENT_ID: ""
+      AZURE_ABFS_OAUTH_SECRET: ""
+      AZURE_ABFS_OAUTH_ENDPOINT: ""
+      AZURE_WASB_ACCESS_KEY: ""
+    depends_on:
+      metastore-db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - finguard-net
+
+  # ── Trino (SQL query engine) ─────────────────────────────────────────────────
+  trino:
+    image: trinodb/trino:480
+    container_name: trino
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./infra/trino/catalog:/etc/trino/catalog
+    depends_on:
+      - hive-metastore
+    networks:
+      - finguard-net
+
+  # ── Flink JobManager ─────────────────────────────────────────────────────────
+  flink-jobmanager:
+    image: flink:1.19
+    container_name: flink-jobmanager
+    ports:
+      - "8881:8081"
+    command: jobmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+    networks:
+      - finguard-net
+
+  # ── Flink TaskManager ────────────────────────────────────────────────────────
+  flink-taskmanager:
+    image: flink:1.19
+    container_name: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      FLINK_PROPERTIES: |
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+    networks:
+      - finguard-net
+
+networks:
+  finguard-net:
+    name: finguard-net
+    driver: bridge
+
+volumes:
+  kafka_data:
+  postgres_data:
+  minio_data:
+  metastore_db_data:

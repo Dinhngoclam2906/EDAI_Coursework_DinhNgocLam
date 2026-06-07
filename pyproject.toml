@@ -1,0 +1,25 @@
+[project]
+name = "edai-coursework-dinhngoclam"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "boto3>=1.43.15",
+    "delta-spark>=4.2.0",
+    "deltalake>=1.6.0",
+    "faker>=40.19.1",
+    "kafka-python>=2.3.1",
+    "minio>=7.2.20",
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "psycopg2-binary>=2.9.12",
+    "pyarrow>=24.0.0",
+    "pydantic>=2.13.4",
+    "pyspark>=4.1.1",
+    "pytest>=9.0.3",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+    "ruff>=0.15.14",
+    "sqlalchemy>=2.0.50",
+]
