@@ -15,5 +15,6 @@ wheels/
 # Generated data (reproduce locally with uv run python -m data_generator.offline.run)
 data/
 
-# Claude Code project instructions (local only)
+# Claude Code project instructions and session logs (local only)
 CLAUDE.md
+PROGRESS_LOG.md
