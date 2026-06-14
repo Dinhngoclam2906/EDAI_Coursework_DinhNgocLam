@@ -25,22 +25,22 @@ Think of it as a mini production data platform you can run on your laptop.
 │  merchants, transactions,         login_attempt, card_blocked…  │
 │  fraud_labels                                                   │
 └────────────────┬────────────────────────┬───────────────────────┘
-                 │ CDC (Debezium)          │ Kafka topics
-                 ▼                         ▼
+                 │ CDC (Debezium)         │ Kafka topics
+                 ▼                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Bronze Layer (Delta Lake)                     │
+│                    Bronze Layer (Delta Lake)                    │
 │         Raw ingestion with watermark-based deduplication        │
 └────────────────────────────┬────────────────────────────────────┘
                              │ Apache Spark
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    Silver Layer (Delta Lake)                     │
+│                    Silver Layer (Delta Lake)                    │
 │    Cleaned, typed, deduplicated — one table per domain          │
 └────────────────────────────┬────────────────────────────────────┘
                              │ Apache Spark
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                     Gold Layer (Delta Lake)                      │
+│                     Gold Layer (Delta Lake)                     │
 │  Dimensional model (SCD2 dims + facts) · OBT · ML feature tables│
 └────────────────────────────┬────────────────────────────────────┘
                              │

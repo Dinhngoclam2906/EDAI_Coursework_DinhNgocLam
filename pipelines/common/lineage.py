@@ -4,11 +4,14 @@ Gracefully skips if DataHub is not reachable.
 """
 
 import json
+import os
 import urllib.request
 from datetime import datetime
 
 
-DATAHUB_URL = "http://localhost:8080"
+# Inside Docker: datahub-gms:8080 (internal network hostname)
+# Local dev:     localhost:8085 (mapped external port)
+DATAHUB_URL = os.environ.get("DATAHUB_GMS_URL", "http://localhost:8085")
 PLATFORM = "finguard"
 
 

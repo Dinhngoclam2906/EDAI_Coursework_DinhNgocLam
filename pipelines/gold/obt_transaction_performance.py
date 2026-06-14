@@ -30,10 +30,12 @@ def run() -> None:
         last_ts = get_watermark(wm_key)
 
         # Only process fact rows that are new since last OBT run.
-        # _gold_ts is stamped by fact_transaction at pipeline write time — unlike
-        # created_ts (immutable business timestamp), it advances on every MERGE run.
-        fact_tx_new = spark.read.format("delta").load(f"{GOLD_BASE}/fact_transaction") \
-                          .filter(F.col("_gold_ts") > last_ts)
+        # _gold_ts is stamped by fact_transaction at MERGE time and advances on every
+        # write. Fall back to created_ts for tables written before _gold_ts was added.
+        fact_df = spark.read.format("delta").load(f"{GOLD_BASE}/fact_transaction")
+        if "_gold_ts" not in fact_df.columns:
+            fact_df = fact_df.withColumn("_gold_ts", F.col("created_ts"))
+        fact_tx_new = fact_df.filter(F.col("_gold_ts") > last_ts)
 
         input_rows = fact_tx_new.count()
         print(f"[GOLD] obt_transaction_performance: {input_rows:,} new fact rows since {last_ts}")
@@ -45,7 +47,7 @@ def run() -> None:
 
         max_ts = fact_tx_new.agg(F.max("_gold_ts")).collect()[0][0]
 
-        fact_tx     = fact_tx_new
+        fact_tx = fact_tx_new
         fact_fraud  = spark.read.format("delta").load(f"{GOLD_BASE}/fact_fraud_label") \
                          .select("transaction_id", "fraud_type")
         dim_customer = spark.read.format("delta").load(f"{GOLD_BASE}/dim_customer") \
