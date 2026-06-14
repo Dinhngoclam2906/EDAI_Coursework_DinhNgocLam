@@ -1,0 +1,20 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment variables
+.env
+
+# Generated data (reproduce locally with uv run python -m data_generator.offline.run)
+data/
+
+# Claude Code project instructions and session logs (local only)
+CLAUDE.md
+PROGRESS_LOG.md

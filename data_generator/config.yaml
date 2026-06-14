@@ -1,0 +1,46 @@
+n_customers: 50000
+n_accounts: 60000
+n_cards: 75000
+n_merchants: 8000
+n_transactions: 500000
+days_history: 180
+fraud_rate: 0.015
+
+skew_cities:
+  - name: "Ho Chi Minh City"
+    weight: 0.50
+  - name: "Hanoi"
+    weight: 0.20
+  - name: "Da Nang"
+    weight: 0.10
+  - name: "Other"
+    weight: 0.20
+
+schema_change_date: "2026-02-15"   # ~90 days into the 180-day history window
+duplicate_rate_offline: 0.01
+
+base_events_per_min: 200
+burst_multiplier: 20
+burst_days: [1, 15]
+burst_window_start: "09:00"
+burst_window_duration_mins: 30
+late_arrival_rate: 0.10
+late_delay_min_max: [10, 900]
+duplicate_rate_stream: 0.015
+
+random_seed: 42
+output_dir: "data"
+
+# Section 03 — Drift configuration
+drift_enabled: true
+drift_start_date: "2026-03-01"
+drift_mode: "gradual"             # gradual | abrupt
+
+# Scenario A: Probing Attack Surge (concept drift)
+scenario_A_probing_surge: true
+fraud_multiplier: 3.0             # fraud rate 1.5% -> 4.5% post-drift
+probing_weight_post_drift: 0.55   # probing fraud type rises to 55%
+
+# Scenario B: Transaction Amount Drift (covariate drift)
+scenario_B_amount_drift: true
+amount_multiplier: 1.20           # 20% amount increase post-drift
